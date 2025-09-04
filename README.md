@@ -1,5 +1,8 @@
+## Introduction 
+This repository houses an overlay filesystem that runs in userspace using [libfuse](https://github.com/libfuse/libfuse/tree/master).
 ## Motivation
-The motivation for creating a baby overlay filesystem came from exploring the architecture of Docker. 
+The motivation for creating a baby overlay filesystem came from exploring the implementation of Docker. 
+
 Docker is cool because it, to a great extent, solves the dependency hell problem. Modern applications are beasts, relying on a dizzying array of dependencies to perform the barest of tasks(the npm package *is-even* comes to mind). The same abstractions that let us do more - fast, also pose one of the biggest challenges when you try to run several of them on the same machine. Docker, learning from all the operating systems that came before it, solves this by playing *illusionist* - to each Docker container the only thing on the machine are just what it needs - no more, no less. 
 
 Sounds cool right? Hard to do well.
@@ -9,28 +12,34 @@ It's easy to see where this is wasteful, and the obvious next idea is to central
 
 ## Overlay filesystems
 An overlay filesystem works as follows: given two distinct directories *lowerdir* and *upperdir*, it tries to present to the user a unified view of these two directories.
+
 Historically this was used to "write" to a read-only CD. You'd create a writable layer above it, where all your chages went - leaving the disk untouched. 
 For us Docker enthusiasts, it will be used to present the illusion that you have an editable copy of a dependency on which you can write, while keeping the actual copy spotless.
+<img width="1513" height="571" alt="image" src="https://github.com/user-attachments/assets/3557b663-0829-4610-a5ee-358ec9cf400b" />
 
-<img width="1513" height="571" alt="image" src="https://github.com/user-attachments/assets/9da23b6e-893d-421b-92a7-c0fc3316b2b1" />
 
 ## Overlay filesystems in user space
 
 The *lowerdir* and *upperdir* don't really comprise real storage media - they are directories on our disk. Therefore, our filesystem can run in user mode without the kernel actually having to manage any real storage.
 
 We achieve this is by registering with the virtual filesystem, a *daemon* - a long running background process that roleplays as a filesystem - answering any queries that the OS makes of the virtual filesystem. 
+
 This daemon(with the help of libfuse - a simple C program) is responsible for managing the actual backing directories and presenting the unified view to the OS, according to the semantics of the overlay filesystem.
 To write a filesystem means to write this program. 
 
 
 ## The systemcalls and their semantics
 One of the design principles behind UNIX was that files are the lingua franca of programs - files are how programs communicate with each other. Unsurprisingly, thus, writing a filesystem is a great way to learn how UNIX-like systems work. 
+
 The OS exposes functionality to the user via what is called *systemcalls*(or *syscalls* for short), callable through shell or from programming language APIs. Some of the most commonly used UNIX tools like ls, cat, echo or vim work by composing a few syscalls. You can see this in action by running the same commands inside of an strace - which shows exactly what syscalls were made. 
+
 Our job as filesystem author is to help the OS answer syscalls. Libfuse handles the interaction with the virtual filesystem and so all we need to provide is a set of functions called FUSE callbacks that describe how the filesystem works.
+
 The following table summarizes some typical syscalls, the associated FUSE callback and the semantics by which the two directories are combined to present the unified view.
 There are two recurring themes in the union semantics. 
-	1. Whiteouts: We provide delete functionality in the immutable lowerdir by creating a corresponding *gravestone* in upperdir, called a whiteout. For a file or directory with path *f* relative to lowerdir, this gravestone is a file with path *f.wh* relative to upperdir. 
-	2. Copy-up: We provide edit functionality in the immutable lowerdir by creating a copy of whichever file in lowerdir is desired to be edited, whenever the OS is asked to open a file in a write mode. 
+1. Whiteouts: We provide delete functionality in the immutable lowerdir by creating a corresponding *gravestone* in upperdir, called a whiteout. For a file or directory with path *f* relative to lowerdir, this gravestone is a file with path *f.wh* relative to upperdir. 
+2. Copy-up: We provide edit functionality in the immutable lowerdir by creating a copy of whichever file in lowerdir is desired to be edited, whenever the OS is asked to open a file in a write mode.
+
 | FUSE Callback | System Call | Description                                                                                                                                                                       | Union Semantics                                                                                                                                                                                                                                                                                                                               |
 |---------------|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | getattr       | getxattr    | Returns attributes(key-value pairs) associated with a given path in a filesystem                                                                                                  | For a file that exists only in lowerdir, return the attributes of that file unless the file has a corresponding whiteout entry in the upperdir. If the file exists in the upperdir, then return the attributes of the upperdir - shading the copy of the file in the lowerdir altogether.                                                     |
@@ -45,4 +54,3 @@ There are two recurring themes in the union semantics.
 | mkdir         | mkdir       | Create a new directory                                                                                                                                                            | Create a new directory in upperdir, unless the specified path is already taken by either an upperdir or lowerdir path.                                                                                                                                                                                                                        |
 | truncate      | truncate`   | Truncate a given file to a certain size in bytes, this can involve padding the file if the provided size is larger than the actual size or truncating it at the end otherwise.    | If the file is in upperdir truncate it. If the file is only in the lowerdir and has not been whited out, then make a copy of it in upperdir and truncate that copy.                                                                                                                                                                           |
 | rename        | rename      | Change the name or location of a file                                                                                                                                             | Renaming is always done in upperdir, using whiteouts and copy-ups to ensure overlay correctness.                                                                                                                                                                                                                                              |
-
