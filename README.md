@@ -12,7 +12,7 @@ An overlay filesystem works as follows: given two distinct directories *lowerdir
 Historically this was used to "write" to a read-only CD. You'd create a writable layer above it, where all your chages went - leaving the disk untouched. 
 For us Docker enthusiasts, it will be used to present the illusion that you have an editable copy of a dependency on which you can write, while keeping the actual copy spotless.
 
-Insert diagram of how the Kernel interacts with the Virtual File system.
+<img width="1513" height="571" alt="image" src="https://github.com/user-attachments/assets/9da23b6e-893d-421b-92a7-c0fc3316b2b1" />
 
 ## Overlay filesystems in user space
 
